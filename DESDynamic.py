@@ -1,9 +1,8 @@
 class PSTable:
     ipTable = [] # initial permutation // permutasi pertama di awal
-    pc1Table = [] # permuted choice 1 // memilih mana kanan dan kiri
-                    # hanya 56 bit yang dipilih, sisanya (8 bit) digunakan untuk parity
-    pc2Table = [] # permuted choice 2 // memilih 48 dari 56 bit untuk tiap round
-    shiftTable = []
+    pc1Table = [] # permuted choice 1 // memotong key dari 64 bit ke 56 bit lalu di permute
+    pc2Table = [] # permuted choice 2 // compress dan permute key untuk digunakan tiap round
+    shiftTable = [] # memutar subkey tiap round ke kiri sebanyak n bit
     eTable = [] # expansion table // expand 32 bit menjadi 48 bit
     sTable = [] # substituion box
     pTable = [] # permutation table // shuffle 32 bit block
@@ -160,44 +159,54 @@ class DESCipher():
     def binaryToString(self,binary):
         convertedString = ''.join([chr(int(binary[i:i+8], 2)) for i in range(0, len(binary), 8)])
         return convertedString
+    
+    def binaryToHex(self,binary):
+        convertedString = ''.join([hex(int(binary[i:i+8], 2)) for i in range(0, len(binary), 8)])
+        return convertedString
     def generateRoundKeys(self,key):
         
-        # Key into binary
+        # dapatkan key dalam bentuk binary dari string key yang diberikan
         keyBinary = self.stringToBinary(key)
-        pc1_key_str = ''.join(keyBinary[bit - 1] for bit in self.tables.pc1Table)
+
+        # key dengan index 8,16,24,32,40,48,56, dan 64 di drop lalu dipermute
+        # diimplementasikan dengan tabel pc1 yang menyimpan tabel posisi bit setelah drop dan permute
+        keypc1 = ''.join(keyBinary[bit - 1] for bit in self.tables.pc1Table)
 
         
-        # Split the 56-bit key into two 28-bit halves
-        c0 = pc1_key_str[:28]
-        d0 = pc1_key_str[28:]
-        round_keys = []
+        # split 56 bit tersebut jadi 2 half masing masing 28bit
+        c0 = keypc1[:28]
+        d0 = keypc1[28:]
+        roundKeys = []
         for round_num in range(16):
-            # Perform left circular shift on C and D
+            # shift ke kiri sebanyak angka di shift table
             c0 = c0[self.tables.shiftTable[round_num]:] + c0[:self.tables.shiftTable[round_num]]
             d0 = d0[self.tables.shiftTable[round_num]:] + d0[:self.tables.shiftTable[round_num]]
-            # Concatenate C and D
+            # gabungkan lagi
             cd_concatenated = c0 + d0
 
-            # Apply the PC2 permutation
-            round_key = ''.join(cd_concatenated[bit - 1] for bit in self.tables.pc2Table)
+            # compress key dan drop bit index 9, 18, 22, 25, 35, 38, 43, dan 54
+            # diimplementasikan menggunakan tabel pc2
+            roundKey = ''.join(cd_concatenated[bit - 1] for bit in self.tables.pc2Table)
 
-            # Store the round key
-            round_keys.append(round_key)
-        return round_keys
+            # masukan ke array
+            roundKeys.append(roundKey)
+        return roundKeys
     def ipPermute(self,binary):
-        
+        #initial permutation
         resultTable = [None] * 64
         
         for i in range(64):
             resultTable[i] = binary[self.tables.ipTable[i] - 1]
 
-        # Convert the result back to a string for better visualization
+        # jadikan string 
         resultString = ''.join(resultTable)
         
         return resultString
     
     def splitTextToBlocks(self, text):
-        blocksAmount = (len(text)//8) + 1
+        blocksAmount = (len(text)//8)
+        if (len(text)%8 != 0): 
+            blocksAmount += 1
         blocks = []
 
         for block in range(blocksAmount):
@@ -206,28 +215,29 @@ class DESCipher():
             text = text[8:]
         return blocks
     
-    def encryptLong(self,text,key):
+    def encryptLong(self,text,key, returnBinary=False):
         blocks = self.splitTextToBlocks(text)
         encryptResult = ''
         for block in blocks:
-            encryptResult += self.encrypt(block,key)
+            encryptResult += self.encrypt(block,key,returnBinary)
         return encryptResult
 
-    def decryptLong(self,text,key):
+    def decryptLong(self,text,key, returnBinary=False):
         blocks = self.splitTextToBlocks(text)
         decryptResult = ''
         for block in blocks:
-            decryptResult += self.decrypt(block,key)
+            decryptResult += self.decrypt(block,key,returnBinary)
         return decryptResult
     
-    def encrypt(self,text,key):
+    def encrypt(self,text,key, returnBinary=False):
         binary = self.stringToBinary(text)
 
         roundKeys = self.generateRoundKeys(key)
 
+        #initial permutation
         permutedString = self.ipPermute(binary)
 
-        # the initial permutation result is devided into 2 halfs
+        # split menjadi left dan right half
         lpt = permutedString[:32]
         rpt = permutedString[32:]
 
@@ -298,17 +308,14 @@ class DESCipher():
         final_cipher = [final_result[self.tables.ipInverseTable[i] - 1] for i in range(64)]
 
         # Convert the result back to a string for better visualization
-        final_cipher_str = ''.join(final_cipher)
+        encryptedText = ''.join(final_cipher)
 
-        # Print or use the final cipher(binary)
-        # print("Final Cipher binary:", final_cipher_str, len(final_cipher_str))
-
-
-        # Convert binary cipher to ascii
-        final_cipher_ascii = self.binaryToString(final_cipher_str)
+        # opsi return sebagai binary
+        if (not returnBinary):
+            encryptedText = self.binaryToString(encryptedText)
         
-        return final_cipher_ascii
-    def decrypt(self, text, key):
+        return encryptedText
+    def decrypt(self, text, key, returnBinary=False):
         binary = self.stringToBinary(text)
         
         # Initialize lists to store round keys
@@ -380,18 +387,18 @@ class DESCipher():
         final_cipher = [final_result[self.tables.ipInverseTable[i] - 1] for i in range(64)]
 
         # Convert the result back to a string for better visualization
-        final_cipher_str = ''.join(final_cipher)
+        decryptedText = ''.join(final_cipher)
 
-        # Print or use the final cipher
 
         # binary cipher string to ascii
-        final_cipher_ascii = self.binaryToString(final_cipher_str)
-        return final_cipher_ascii
+        if (not returnBinary):
+            decryptedText = self.binaryToString(decryptedText)
+        return decryptedText
 
 
 DESObject = DESCipher(ftable)
-encryptedRes = DESObject.encryptLong("AKU KAMU AKU KAMU AKU", "MENGAPAA")
-decryptedRes = DESObject.decryptLong(encryptedRes, "MENGAPAA")
+encryptedRes = DESObject.encryptLong("halo aku adalah des encryption", "saltsalt")
+decryptedRes = DESObject.decryptLong(encryptedRes, "saltsalt")
 print(f'Encrypted: {encryptedRes}')
 print(f'Decrypted: {decryptedRes}')
 
