@@ -157,11 +157,17 @@ class DESCipher():
             return binaryString
 
     def binaryToString(self,binary):
-        convertedString = ''.join([chr(int(binary[i:i+8], 2)) for i in range(0, len(binary), 8)])
+        convertedString = ''
+        for i in range(0, len(binary), 8):
+            byteChunk = binary[i:i+8]
+            convertedString += chr(int(byteChunk, 2)) 
         return convertedString
     
     def binaryToHex(self,binary):
-        convertedString = ''.join([hex(int(binary[i:i+8], 2)) for i in range(0, len(binary), 8)])
+        convertedString = ''
+        for i in range(0, len(binary), 8):
+            byteChunk = binary[i:i+8]
+            convertedString += hex(int(byteChunk, 2)) 
         return convertedString
     def generateRoundKeys(self,key):
         
@@ -170,38 +176,30 @@ class DESCipher():
 
         # key dengan index 8,16,24,32,40,48,56, dan 64 di drop lalu dipermute
         # diimplementasikan dengan tabel pc1 yang menyimpan tabel posisi bit setelah drop dan permute
-        keypc1 = ''.join(keyBinary[bit - 1] for bit in self.tables.pc1Table)
-
+        keypc1 = ''
+        for i in self.tables.pc1Table:
+            keypc1 += keyBinary[i - 1] 
         
         # split 56 bit tersebut jadi 2 half masing masing 28bit
-        c0 = keypc1[:28]
-        d0 = keypc1[28:]
+        keyL = keypc1[:28]
+        keyR = keypc1[28:]
+        # menyimpan keys yang akan digunakan tiap round
         roundKeys = []
         for round_num in range(16):
             # shift ke kiri sebanyak angka di shift table
-            c0 = c0[self.tables.shiftTable[round_num]:] + c0[:self.tables.shiftTable[round_num]]
-            d0 = d0[self.tables.shiftTable[round_num]:] + d0[:self.tables.shiftTable[round_num]]
-            # gabungkan lagi
-            cd_concatenated = c0 + d0
+            keyL = keyL[self.tables.shiftTable[round_num]:] + keyL[:self.tables.shiftTable[round_num]]
+            keyR = keyR[self.tables.shiftTable[round_num]:] + keyR[:self.tables.shiftTable[round_num]]
+            keyLR = keyL + keyR
 
             # compress key dan drop bit index 9, 18, 22, 25, 35, 38, 43, dan 54
             # diimplementasikan menggunakan tabel pc2
-            roundKey = ''.join(cd_concatenated[bit - 1] for bit in self.tables.pc2Table)
+            roundKey = ''
+            for i in self.tables.pc2Table:
+                roundKey += keyLR[i - 1] 
 
             # masukan ke array
             roundKeys.append(roundKey)
         return roundKeys
-    def ipPermute(self,binary):
-        #initial permutation
-        resultTable = [None] * 64
-        
-        for i in range(64):
-            resultTable[i] = binary[self.tables.ipTable[i] - 1]
-
-        # jadikan string 
-        resultString = ''.join(resultTable)
-        
-        return resultString
     
     def splitTextToBlocks(self, text):
         blocksAmount = (len(text)//8)
@@ -229,86 +227,79 @@ class DESCipher():
             decryptResult += self.decrypt(block,key,returnBinary)
         return decryptResult
     
-    def encrypt(self,text,key, returnBinary=False):
-        binary = self.stringToBinary(text)
-
-        roundKeys = self.generateRoundKeys(key)
-
-        #initial permutation
-        permutedString = self.ipPermute(binary)
-
-        # split menjadi left dan right half
-        lpt = permutedString[:32]
-        rpt = permutedString[32:]
-
-
-
-
-        for round_num in range(16):
-            # Perform expansion (32 bits to 48 bits)
-            expanded_result = [rpt[i - 1] for i in self.tables.eTable]
-
-            # Convert the result back to a string for better visualization
-            expanded_result_str = ''.join(expanded_result)
-
-            # Round key for the current round
-            round_key_str = roundKeys[round_num]
-
-
-            xor_result_str = ''
-            for i in range(48):
-                xor_result_str += str(int(expanded_result_str[i]) ^ int(round_key_str[i]))
-
-
-            # Split the 48-bit string into 8 groups of 6 bits each
-            six_bit_groups = [xor_result_str[i:i+6] for i in range(0, 48, 6)]
-
-            # Initialize the substituted bits string
-            s_box_substituted = ''
-
-            # Apply S-box substitution for each 6-bit group
-            for i in range(8):
-                # Extract the row and column bits
-                row_bits = int(six_bit_groups[i][0] + six_bit_groups[i][-1], 2)
-                col_bits = int(six_bit_groups[i][1:-1], 2)
-
-                # Lookup the S-box value
-                s_box_value = self.tables.sTable[i][row_bits][col_bits]
-                
-                # Convert the S-box value to a 4-bit binary string and append to the result
-                s_box_substituted += format(s_box_value, '04b')
-
-            # Apply a P permutation to the result
-            p_box_result = [s_box_substituted[i - 1] for i in self.tables.pTable]
-
-            # # Convert the result back to a string for better visualization
-            # p_box_result_str = ''.join(p_box_result)
-
-
-            # Convert LPT to a list of bits for the XOR operation
-            lpt_list = list(lpt)
-
-            # Perform XOR operation
-            new_rpt = [str(int(lpt_list[i]) ^ int(p_box_result[i])) for i in range(32)]
-
-            # Convert the result back to a string for better visualization
-            new_rpt_str = ''.join(new_rpt)
-
-            # Update LPT and RPT for the next round
-            lpt = rpt
-            rpt = new_rpt_str
-
-            # Print or use the RPT for each round
-
-
-        # After the final round, reverse the last swap
-        final_result = rpt + lpt
-
-        # Perform the final permutation (IP-1)
-        final_cipher = [final_result[self.tables.ipInverseTable[i] - 1] for i in range(64)]
+    def feistelFunction(self,usedHalf,otherHalf,roundKey):
+        # Perform expansion (32 bits to 48 bits)
+        expanded_result = [usedHalf[i - 1] for i in self.tables.eTable]
 
         # Convert the result back to a string for better visualization
-        encryptedText = ''.join(final_cipher)
+        expanded_result_str = ''.join(expanded_result)
+
+
+
+        xor_result_str = ''
+        for i in range(48):
+            xor_result_str += str(int(expanded_result_str[i]) ^ int(roundKey[i]))
+
+
+        # Split the 48-bit string into 8 groups of 6 bits each
+        six_bit_groups = [xor_result_str[i:i+6] for i in range(0, 48, 6)]
+
+        # Initialize the substituted bits string
+        s_box_substituted = ''
+
+        # Apply S-box substitution for each 6-bit group
+        for i in range(8):
+            # Extract the row and column bits
+            row_bits = int(six_bit_groups[i][0] + six_bit_groups[i][-1], 2)
+            col_bits = int(six_bit_groups[i][1:-1], 2)
+
+            # Lookup the S-box value
+            s_box_value = self.tables.sTable[i][row_bits][col_bits]
+                
+            # Convert the S-box value to a 4-bit binary string and append to the result
+            s_box_substituted += format(s_box_value, '04b')
+
+        # Apply a P permutation to the result
+        p_box_result = [s_box_substituted[i - 1] for i in self.tables.pTable]
+
+        # # Convert the result back to a string for better visualization
+        # p_box_result_str = ''.join(p_box_result)
+
+
+        # XOR half yang tidak difunctionkan
+        xorResult = ''
+        for i in range(32):
+            xorResult += str(int(otherHalf[i]) ^ int(p_box_result[i]))
+        #return hasil
+        return xorResult
+
+
+    def encrypt(self,text,key, returnBinary=False):
+        # initial permutation
+        binary = self.stringToBinary(text)
+        permutedString = ''
+        for i in range(64):
+            permutedString += binary[self.tables.ipTable[i] - 1] 
+        # split menjadi left dan right half
+        strL = permutedString[:32]
+        strR = permutedString[32:]
+
+        # dapatkan array roundkeys yang akan digunakan
+        roundKeys = self.generateRoundKeys(key)
+
+        for round in range(16):
+            #jalankan melalui feistel function (F-function)
+            cipheredHalf = self.feistelFunction(strR,strL,roundKeys[round])
+            strL = strR
+            strR = cipheredHalf
+
+        # gabung menjadi satu string agar dapat di inverse
+        strRL = strR + strL
+
+        # apply inverse ip dan jadikan string
+        encryptedText = ''
+        for i in range(64):
+            encryptedText += strRL[self.tables.ipInverseTable[i] - 1] 
 
         # opsi return sebagai binary
         if (not returnBinary):
@@ -316,81 +307,34 @@ class DESCipher():
         
         return encryptedText
     def decrypt(self, text, key, returnBinary=False):
+        # initial permutation
         binary = self.stringToBinary(text)
-        
-        # Initialize lists to store round keys
+        permutedString = ''
+        for i in range(64):
+            permutedString += binary[self.tables.ipTable[i] - 1] 
+        # split menjadi left half dan right half
+        strL = permutedString[:32]
+        strR = permutedString[32:]
+
+        # dapatkan array roundkey yang akan digunakan
         roundKeys = self.generateRoundKeys(key)
-        
-        # Apply Initial Permutation
-        permutedString = self.ipPermute(binary)
-        
-        lpt = permutedString[:32]
-        rpt = permutedString[32:]
 
-        for round_num in range(16):
-            # Perform expansion (32 bits to 48 bits)
-            expanded_result = [rpt[i - 1] for i in self.tables.eTable]
+        for round in range(16):
+            #jalankan melalui feistel function (F-function)
+            cipheredHalf = self.feistelFunction(strR,strL,roundKeys[15-round])
+            strL = strR
+            strR = cipheredHalf
         
-            # Convert the result back to a string for better visualization
-            expanded_result_str = ''.join(expanded_result)
-            # print(expanded_result_str)
-            # Round key for the current round
-            round_key_str = roundKeys[15-round_num]
-        
-            # XOR between key and expanded result 
-            xor_result_str = ''
-            for i in range(48):
-                xor_result_str += str(int(expanded_result_str[i]) ^ int(round_key_str[i]))
-        
-        
-            # Split the 48-bit string into 8 groups of 6 bits each
-            six_bit_groups = [xor_result_str[i:i+6] for i in range(0, 48, 6)]
-        
-            # Initialize the substituted bits string
-            s_box_substituted = ''
-        
-            # Apply S-box substitution for each 6-bit group
-            for i in range(8):
-                # Extract the row and column bits
-                row_bits = int(six_bit_groups[i][0] + six_bit_groups[i][-1], 2)
-                col_bits = int(six_bit_groups[i][1:-1], 2)
-        
-                # Lookup the S-box value
-                s_box_value = self.tables.sTable[i][row_bits][col_bits]
-                
-                # Convert the S-box value to a 4-bit binary string and append to the result
-                s_box_substituted += format(s_box_value, '04b')
-        
-            # Apply a P permutation to the result
-            p_box_result = [s_box_substituted[i - 1] for i in self.tables.pTable]
-        
-            # Convert the result back to a string for better visualization
-            # p_box_result_str = ''.join(p_box_result)
-        
-            # Convert LPT to a list of bits for the XOR operation
-            lpt_list = list(lpt)
-        
-            # Perform XOR operation
-            new_rpt = [str(int(lpt_list[i]) ^ int(p_box_result[i])) for i in range(32)]
-        
-            # Convert the result back to a string for better visualization
-            new_rpt_str = ''.join(new_rpt)
-        
-            # Update LPT and RPT for the next round
-            lpt = rpt
-            rpt = new_rpt_str
-        
-            # Print or use the RPT for each round
-        
-        final_result = rpt + lpt
-        # Perform the final permutation (IP-1)
-        final_cipher = [final_result[self.tables.ipInverseTable[i] - 1] for i in range(64)]
+        # gabung menjadi satu string agar dapat di inverse
+        strRL = strR + strL
 
-        # Convert the result back to a string for better visualization
-        decryptedText = ''.join(final_cipher)
+        # apply inverse ip dan jadikan string
+        decryptedText = ''
+        for i in range(64):
+            decryptedText += strRL[self.tables.ipInverseTable[i] - 1] 
 
 
-        # binary cipher string to ascii
+        # opsi return sebagai binary
         if (not returnBinary):
             decryptedText = self.binaryToString(decryptedText)
         return decryptedText
@@ -398,7 +342,9 @@ class DESCipher():
 
 DESObject = DESCipher(ftable)
 encryptedRes = DESObject.encryptLong("halo aku adalah des encryption", "saltsalt")
+enBin = DESObject.encryptLong("halo aku adalah des encryption", "saltsalt",True)
 decryptedRes = DESObject.decryptLong(encryptedRes, "saltsalt")
+print(f'EncryptedHex: {DESObject.binaryToHex(enBin)}')
 print(f'Encrypted: {encryptedRes}')
 print(f'Decrypted: {decryptedRes}')
 
