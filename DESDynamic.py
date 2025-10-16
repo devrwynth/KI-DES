@@ -167,7 +167,7 @@ class DESCipher():
         convertedString = ''
         for i in range(0, len(binary), 8):
             byteChunk = binary[i:i+8]
-            convertedString += hex(int(byteChunk, 2)) 
+            convertedString += format(int(byteChunk, 2),'x')
         return convertedString
     def generateRoundKeys(self,key):
         
@@ -185,10 +185,10 @@ class DESCipher():
         keyR = keypc1[28:]
         # menyimpan keys yang akan digunakan tiap round
         roundKeys = []
-        for round_num in range(16):
+        for round in range(16):
             # shift ke kiri sebanyak angka di shift table
-            keyL = keyL[self.tables.shiftTable[round_num]:] + keyL[:self.tables.shiftTable[round_num]]
-            keyR = keyR[self.tables.shiftTable[round_num]:] + keyR[:self.tables.shiftTable[round_num]]
+            keyL = keyL[self.tables.shiftTable[round]:] + keyL[:self.tables.shiftTable[round]]
+            keyR = keyR[self.tables.shiftTable[round]:] + keyR[:self.tables.shiftTable[round]]
             keyLR = keyL + keyR
 
             # compress key dan drop bit index 9, 18, 22, 25, 35, 38, 43, dan 54
@@ -228,48 +228,40 @@ class DESCipher():
         return decryptResult
     
     def feistelFunction(self,usedHalf,otherHalf,roundKey):
-        # Perform expansion (32 bits to 48 bits)
-        expanded_result = [usedHalf[i - 1] for i in self.tables.eTable]
+        # expansion agar 48 bit (sama dengan jumlah bit round key)
+        expandedHalf = ''
+        for i in self.tables.eTable:
+            expandedHalf += usedHalf[i - 1] 
 
-        # Convert the result back to a string for better visualization
-        expanded_result_str = ''.join(expanded_result)
-
-
-
-        xor_result_str = ''
+        # xor dengan round key
+        xorHalf = ''
         for i in range(48):
-            xor_result_str += str(int(expanded_result_str[i]) ^ int(roundKey[i]))
+            xorHalf += str(int(expandedHalf[i]) ^ int(roundKey[i]))
 
 
-        # Split the 48-bit string into 8 groups of 6 bits each
-        six_bit_groups = [xor_result_str[i:i+6] for i in range(0, 48, 6)]
+        # pisah menjadi 8 array yang masing masing memiliki 6 bit untuk s-box
+        sixBitPieces = [xorHalf[i:i+6] for i in range(0, 48, 6)]
+        sboxHalf = ''
 
-        # Initialize the substituted bits string
-        s_box_substituted = ''
-
-        # Apply S-box substitution for each 6-bit group
+        # s-box substitution
         for i in range(8):
-            # Extract the row and column bits
-            row_bits = int(six_bit_groups[i][0] + six_bit_groups[i][-1], 2)
-            col_bits = int(six_bit_groups[i][1:-1], 2)
+            # dapatkan bit row dan column
+            rowbits = int(sixBitPieces[i][0] + sixBitPieces[i][-1], 2)
+            colbits = int(sixBitPieces[i][1:-1], 2)
 
-            # Lookup the S-box value
-            s_box_value = self.tables.sTable[i][row_bits][col_bits]
+            # dapatkan value sbox dengan row dan col bit
+            sboxValue = self.tables.sTable[i][rowbits][colbits]
                 
-            # Convert the S-box value to a 4-bit binary string and append to the result
-            s_box_substituted += format(s_box_value, '04b')
+            # jadikan 4 binary string dan gabungkan
+            sboxHalf += format(sboxValue, '04b')
 
-        # Apply a P permutation to the result
-        p_box_result = [s_box_substituted[i - 1] for i in self.tables.pTable]
+        # lakukan permutasi P pada result
+        pboxHalf = [sboxHalf[i - 1] for i in self.tables.pTable]
 
-        # # Convert the result back to a string for better visualization
-        # p_box_result_str = ''.join(p_box_result)
-
-
-        # XOR half yang tidak difunctionkan
+        # lakukan XOR pada half yang tidak difunctionkan
         xorResult = ''
         for i in range(32):
-            xorResult += str(int(otherHalf[i]) ^ int(p_box_result[i]))
+            xorResult += str(int(otherHalf[i]) ^ int(pboxHalf[i]))
         #return hasil
         return xorResult
 
